@@ -1,0 +1,120 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: rook-ceph-operator-config
+  namespace: rook-ceph
+data:
+  ROOK_LOG_LEVEL: "INFO"
+  ROOK_CSI_ENABLE_CEPHFS: "true"
+  ROOK_CSI_ENABLE_RBD: "true"
+  ROOK_CSI_ENABLE_GRPC_METRICS: "false"
+  CSI_ENABLE_CEPHFS_SNAPSHOTTER: "true"
+  CSI_ENABLE_RBD_SNAPSHOTTER: "true"
+  CSI_FORCE_CEPHFS_KERNEL_CLIENT: "true"
+  CSI_RBD_FSGROUPPOLICY: "ReadWriteOnceWithFSType"
+  CSI_CEPHFS_FSGROUPPOLICY: "None"
+  ROOK_CSI_ALLOW_UNSUPPORTED_VERSION: "false"
+  ROOK_CSI_CEPH_IMAGE: "registry.cn-shanghai.aliyuncs.com/gcr-k8s/cephcsi:v3.3.1"
+  ROOK_CSI_REGISTRAR_IMAGE: "registry.cn-shanghai.aliyuncs.com/gcr-k8s/csi-node-driver-registrar:v2.2.0"
+  ROOK_CSI_RESIZER_IMAGE: "registry.cn-shanghai.aliyuncs.com/gcr-k8s/csi-resizer:v1.2.0"
+  ROOK_CSI_PROVISIONER_IMAGE: "registry.cn-shanghai.aliyuncs.com/gcr-k8s/csi-provisioner:v2.2.2"
+  ROOK_CSI_SNAPSHOTTER_IMAGE: "registry.cn-shanghai.aliyuncs.com/gcr-k8s/csi-snapshotter:v4.1.1"
+  ROOK_CSI_ATTACHER_IMAGE: "registry.cn-shanghai.aliyuncs.com/gcr-k8s/csi-attacher:v3.2.1"
+  CSI_PLUGIN_PRIORITY_CLASSNAME: "system-node-critical"
+  CSI_PROVISIONER_PRIORITY_CLASSNAME: "system-cluster-critical"
+  CSI_PROVISIONER_NODE_AFFINITY: "role=storage; storage=rook"
+  CSI_PROVISIONER_TOLERATIONS: |
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/master
+      operator: Exists
+  CSI_PLUGIN_TOLERATIONS: |
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/master
+      operator: Exists
+  ROOK_OBC_WATCH_OPERATOR_NAMESPACE: "true"
+  ROOK_ENABLE_FLEX_DRIVER: "false"
+  ROOK_ENABLE_DISCOVERY_DAEMON: "false"
+  ROOK_CEPH_COMMANDS_TIMEOUT_SECONDS: "15"
+  CSI_ENABLE_VOLUME_REPLICATION: "false"
+  ADMISSION_CONTROLLER_NODE_AFFINITY: "role=storage; storage=rook"
+  ADMISSION_CONTROLLER_TOLERATIONS: |
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/master
+      operator: Exists
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rook-ceph-operator
+  namespace: rook-ceph
+  labels:
+    operator: rook
+    storage-backend: ceph
+spec:
+  selector:
+    matchLabels:
+      app: rook-ceph-operator
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: rook-ceph-operator
+    spec:
+      priorityClassName: system-cluster-critical
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+      serviceAccountName: rook-ceph-system
+      containers:
+        - name: rook-ceph-operator
+          image: rook/ceph:v1.7.0
+          args: ["ceph", "operator"]
+          volumeMounts:
+            - mountPath: /var/lib/rook
+              name: rook-config
+            - mountPath: /etc/ceph
+              name: default-config-dir
+          env:
+            - name: ROOK_CURRENT_NAMESPACE_ONLY
+              value: "false"
+            - name: AGENT_PRIORITY_CLASS_NAME
+              value: "system-node-critical"
+            - name: ROOK_DISCOVER_DEVICES_INTERVAL
+              value: "60m"
+            - name: ROOK_HOSTPATH_REQUIRES_PRIVILEGED
+              value: "false"
+            - name: ROOK_ENABLE_SELINUX_RELABELING
+              value: "true"
+            - name: ROOK_ENABLE_FSGROUP
+              value: "true"
+            - name: ROOK_DISABLE_DEVICE_HOTPLUG
+              value: "false"
+            - name: DISCOVER_DAEMON_UDEV_BLACKLIST
+              value: "(?i)dm-[0-9]+,(?i)rbd[0-9]+,(?i)nbd[0-9]+"
+            - name: ROOK_UNREACHABLE_NODE_TOLERATION_SECONDS
+              value: "5"
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+      volumes:
+        - name: rook-config
+          emptyDir: {}
+        - name: default-config-dir
+          emptyDir: {}
