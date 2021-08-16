@@ -1,0 +1,104 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: hello-listener
+spec:
+  serviceAccountName: tekton-triggers
+  triggers:
+    - bindings:
+        - ref: hello-triggerbinding
+      template:
+        ref: hello-triggertemplate
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: hello-triggerbinding
+spec:
+  params:
+    - name: gitrevision
+      value: $(body.revision)
+    - name: gitrepositoryurl
+      value: $(body.url)
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: hello-triggertemplate
+spec:
+  params:
+    - name: gitrevision
+      description: The git revision
+      default: master
+    - name: gitrepositoryurl
+      description: The git repository url
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: hello-trigger-
+      spec:
+        pipelineRef:
+          name: hello-trigger
+        params:
+          - name: revision
+            value: $(tt.params.gitrevision)
+          - name: url
+            value: $(tt.params.gitrepositoryurl)
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: hello-trigger
+spec:
+  params:
+    - name: revision
+      type: string
+    - name: url
+      type: string
+  steps:
+    - name: hello
+      image: alpine
+      command:
+        - echo
+      args:
+        - "url: $(params.revision) revision: $(params.url)"
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: hello-trigger
+spec:
+  params:
+    - name: revision
+      type: string
+      default: master
+    - name: url
+      type: string
+      description: git repository url
+  tasks:
+    - name: hello-trigger
+      taskRef:
+        name: hello-trigger
+      params:
+        - name: revision
+          value: "$(params.revision)"
+        - name: url
+          value: "$(params.url)"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-listener
+spec:
+  rules:
+    - host: hello-listener.test.com
+      http:
+        paths:
+          - backend:
+              service:
+                name: el-hello-listener
+                port:
+                  name: http-listener
+            path: /
+            pathType: ImplementationSpecific
